@@ -1,6 +1,7 @@
 // ========== 工地作战台 ==========
 import { api, cachedGet, getUser } from '../api.js';
 import { el, toast, statusChip, fmtTime, fmtAgo, dataTimestamp, errorState, skeletonCard, ALERT_TYPE_LABELS } from '../ui.js';
+import { CALIBERS, fmtPct } from '../calibers.js';
 
 const FUNNEL_STAGES = [
   ['pending', '待入场'],
@@ -93,6 +94,60 @@ export async function renderDashboard(root, params) {
     ),
   );
 
+  // ---- 本月出勤率（口径与出勤甘特/导出一致） ----
+  const att = d.attendance || {};
+  let attCaliber = localStorage.getItem('gt_caliber') || 'days';
+  const attCardBox = el('div', { class: 'span-8' });
+  function renderAttCard() {
+    attCardBox.innerHTML = '';
+    const cal = CALIBERS[attCaliber] || CALIBERS.days;
+    const main = attCaliber === 'days' ? att.rate_days_pct : att.rate_hours_pct;
+    const other = attCaliber === 'days' ? att.rate_hours_pct : att.rate_days_pct;
+    const otherCal = attCaliber === 'days' ? CALIBERS.hours : CALIBERS.days;
+    attCardBox.append(el('div', { class: 'card' },
+      el('h3', {}, '本月出勤率（' + att.month + '）',
+        el('span', { class: 'spacer' }),
+        el('div', { class: 'cal-mini-tabs' },
+          ['days', 'hours'].map(k => el('button', {
+            class: 'seg-item sm' + (k === attCaliber ? ' active' : ''),
+            onclick: () => { attCaliber = k; localStorage.setItem('gt_caliber', k); renderAttCard(); },
+          }, CALIBERS[k].label))),
+      el('div', { class: 'att-cal-head' },
+        el('div', { class: 'att-cal-big' }, fmtPct(main), el('span', { class: 'dim' }, cal.name)),
+        el('div', { class: 'att-cal-other' }, '另一口径 ' + fmtPct(other) + ' · ' + otherCal.label),
+      ),
+      el('div', { class: 'caliber-formula' }, '📐 ' + cal.formula),
+      el('div', { class: 'att-mini-counts' },
+        el('span', {}, '出勤 ' + (att.present_days || 0) + ' 天'),
+        el('span', {}, '应出勤 ' + (att.scheduled_days || 0) + ' 天'),
+        el('span', { class: 'warn-text' }, '迟 ' + (att.late_days || 0)),
+        el('span', { class: 'warn-text' }, '早 ' + (att.early_days || 0)),
+        el('span', { class: 'danger-text' }, '缺 ' + (att.absent_days || 0)),
+        el('span', {}, '假 ' + (att.leave_days || 0)),
+        el('span', { class: 'danger-text' }, '废 ' + (att.voided_days || 0)),
+        el('span', {}, '工日 ' + (att.workdays || 0)),
+      ),
+      (att.no_punch_people > 0 || att.all_void_people > 0)
+        ? el('div', { class: 'att-empty-row' },
+            att.no_punch_people > 0 ? el('div', { class: 'att-empty compact nopunch' },
+              el('div', { class: 'ae-icon' }, '🚫'),
+              el('div', { class: 'ae-body' }, el('div', { class: 'ae-title' }, att.no_punch_people + ' 人本月无任何打卡'))) : null,
+            att.all_void_people > 0 ? el('div', { class: 'att-empty compact allvoid' },
+              el('div', { class: 'ae-icon' }, '🛑'),
+              el('div', { class: 'ae-body' }, el('div', { class: 'ae-title' }, att.all_void_people + ' 人打卡已全部作废'))) : null)
+        : null,
+      (att.dirty_payroll > 0)
+        ? el('div', { class: 'dirty-warn' }, `⚠️ ${att.dirty_payroll} 个已结算月存在打卡差异待复核，已发工资未受影响。`,
+            el('a', { href: '#/payroll' }, ' 去分账复核 ›'))
+        : null,
+      el('div', { style: 'margin-top:10px' },
+        el('a', { class: 'btn sm', href: '#/attendance' }, '打开出勤甘特 ›'),
+        ' ',
+        el('a', { class: 'btn sm ghost', href: '#/payroll' }, '工资分账 ›')),
+    ));
+  }
+  renderAttCard();
+
   // ---- 今日应培训 ----
   const trainings = d.today_trainings || [];
   const trainingCard = el('div', { class: 'card' },
@@ -172,8 +227,9 @@ export async function renderDashboard(root, params) {
     el('div', { class: 'dash-grid' },
       el('div', { class: 'span-8' }, funnelCard),
       el('div', { class: 'span-4' }, trainingCard),
-      el('div', { class: 'span-6' }, hazardCard),
-      el('div', { class: 'span-6' }, alertCard),
+      attCardBox,
+      el('div', { class: 'span-4' }, hazardCard),
+      el('div', { class: 'span-12' }, alertCard),
     ),
   );
 }

@@ -131,33 +131,82 @@ export async function submitTransition(workerId, payload) {
   }
 }
 
-// 恢复在线后批量同步：服务端按 client_op_id 幂等去重，冲突返回当前状态
+// 出勤打卡：闸机/手机通用入口，带 client_op_id 幂等；离线入队
+export async function submitPunch(payload) {
+  const op = {
+    type: 'punch',
+    worker_id: payload.worker_id,
+    direction: payload.direction,           // in / out
+    source: payload.source,                 // gate / mobile
+    device_id: payload.device_id || '',
+    punch_time: payload.punch_time || null,
+    lat: payload.lat || null, lng: payload.lng || null, accuracy: payload.accuracy || null,
+    client_op_id: payload.client_op_id || newOpId(),
+    client_time: new Date().toISOString(),
+  };
+  if (!online) {
+    const ops = getOutbox(); ops.push(op); saveOutbox(ops);
+    return { queued: true, client_op_id: op.client_op_id };
+  }
+  try {
+    return await api.post('/api/attendance/punches', op);
+  } catch (e) {
+    if (e.offline) {
+      const ops = getOutbox(); ops.push(op); saveOutbox(ops);
+      return { queued: true, client_op_id: op.client_op_id };
+    }
+    throw e;
+  }
+}
+
+// 恢复在线后批量同步：状态变更走 /api/sync/batch；打卡逐笔幂等重放（同人同天多源在服务端聚合合并）
 export async function flushOutbox() {
   const ops = getOutbox();
   if (!ops.length || !online) return { flushed: 0, conflicts: [] };
   const transitions = ops.filter(o => o.type === 'transition');
-  if (!transitions.length) return { flushed: 0, conflicts: [] };
-  try {
-    const res = await api.post('/api/sync/batch', {
-      ops: transitions.map(t => ({
-        client_op_id: t.client_op_id,
-        worker_id: t.worker_id,
-        to: t.to,
-        reason: t.reason,
-        client_time: t.client_time,
-        face_verified: t.face_verified,
-        id_verified: t.id_verified,
-      })),
-    });
-    const results = res.results || [];
-    const doneIds = new Set(results.map(r => r.client_op_id));
-    saveOutbox(ops.filter(o => !doneIds.has(o.client_op_id)));
-    return {
-      flushed: results.filter(r => r.status === 'applied').length,
-      duplicates: results.filter(r => r.status === 'duplicate').length,
-      conflicts: results.filter(r => r.status === 'conflict' || r.status === 'error'),
-    };
-  } catch (e) {
-    return { flushed: 0, conflicts: [], error: e };
+  const punches = ops.filter(o => o.type === 'punch');
+
+  let results = [];
+  if (transitions.length) {
+    try {
+      const res = await api.post('/api/sync/batch', {
+        ops: transitions.map(t => ({
+          client_op_id: t.client_op_id,
+          worker_id: t.worker_id,
+          to: t.to,
+          reason: t.reason,
+          client_time: t.client_time,
+          face_verified: t.face_verified,
+          id_verified: t.id_verified,
+        })),
+      });
+      results = res.results || [];
+    } catch (e) {
+      return { flushed: 0, conflicts: [], error: e };
+    }
   }
+
+  const doneIds = new Set(results.map(r => r.client_op_id));
+  let punchApplied = 0;
+  const punchConflicts = [];
+  for (const p of punches) {
+    try {
+      await api.post('/api/attendance/punches', p);
+      punchApplied++;
+      doneIds.add(p.client_op_id);
+    } catch (e) {
+      if (e.status === 403 || e.status === 400) {
+        // 权限/参数错误：不要在队列里空转，丢弃并提示
+        punchConflicts.push({ client_op_id: p.client_op_id, message: e.message });
+        doneIds.add(p.client_op_id);
+      }
+      // 网络类错误保留在队列，下次再传
+    }
+  }
+  saveOutbox(ops.filter(o => !doneIds.has(o.client_op_id)));
+  return {
+    flushed: results.filter(r => r.status === 'applied').length + punchApplied,
+    duplicates: results.filter(r => r.status === 'duplicate').length,
+    conflicts: results.filter(r => r.status === 'conflict' || r.status === 'error').concat(punchConflicts),
+  };
 }

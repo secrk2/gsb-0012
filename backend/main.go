@@ -51,6 +51,23 @@ func main() {
 	mux.HandleFunc("POST /api/workers/{id}/reveal-name", s.requireAuth(s.handleRevealName))
 	mux.HandleFunc("POST /api/sync/batch", s.requireAuth(s.handleSyncBatch))
 
+	// 出勤打卡
+	mux.HandleFunc("POST /api/attendance/punches", s.requireAuth(s.handlePunch))
+	mux.HandleFunc("GET /api/attendance/gantt", s.requireAuth(s.handleGantt))
+	mux.HandleFunc("GET /api/attendance/export", s.requireAuth(s.handleAttendanceExport))
+	mux.HandleFunc("GET /api/workers/{id}/punches", s.requireAuth(s.handleDayPunches))
+	mux.HandleFunc("POST /api/punches/{id}/void", s.requireAuth(func(w http.ResponseWriter, r *http.Request) { s.handleVoidPunch(w, r, false) }))
+	mux.HandleFunc("POST /api/punches/{id}/restore", s.requireAuth(func(w http.ResponseWriter, r *http.Request) { s.handleVoidPunch(w, r, true) }))
+
+	// 工资分账
+	mux.HandleFunc("GET /api/payroll", s.requireAuth(s.handlePayroll))
+	mux.HandleFunc("GET /api/payroll/export", s.requireAuth(s.handlePayrollExport))
+	mux.HandleFunc("POST /api/payroll/settle", s.requireAuth(s.handleSettle))
+	mux.HandleFunc("POST /api/payroll/pay", s.requireAuth(s.handlePay))
+	mux.HandleFunc("POST /api/payroll/review", s.requireAuth(s.handleReview))
+	mux.HandleFunc("GET /api/contracts", s.requireAuth(s.handleListContracts))
+	mux.HandleFunc("POST /api/contracts", s.requireAuth(s.handleCreateContract))
+
 	handler := corsMiddleware(logMiddleware(mux))
 	log.Printf("工瞳后端启动，监听 %s", addr)
 	srv := &http.Server{

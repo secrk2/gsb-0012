@@ -280,6 +280,16 @@ func seed(db *sql.DB) error {
 		}
 	}
 
-	log.Printf("seed: 完成（%d工地 / %d人员 / %d账号）", len(sites), len(workers), len(users))
-	return tx.Commit()
+	log.Printf("seed: 完成（%d工地 / %d人员 / %d账号），开始生成出勤打卡与分账演示数据...", len(sites), len(workers), len(users))
+	if err := seedAttendanceBase(tx, siteIDs, workerIDs, userIDs); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	if err := seedAttendancePayroll(db); err != nil {
+		return err
+	}
+	log.Printf("seed: 出勤打卡与分账演示数据完成")
+	return nil
 }

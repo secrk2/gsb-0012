@@ -5,6 +5,8 @@ import { renderLogin } from './views/login.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderWorkers } from './views/workers.js';
 import { renderWorkerDetail } from './views/workerDetail.js';
+import { renderAttendance } from './views/attendance.js';
+import { renderPayroll } from './views/payroll.js';
 
 const app = document.getElementById('app');
 
@@ -57,9 +59,15 @@ function shell(content, activeNav) {
   const user = getUser();
   const isWorker = user.role === 'worker';
   const navItems = isWorker
-    ? [{ hash: '#/workers/me', label: '我的档案', ico: '🪪' }]
+    ? [
+        { hash: '#/workers/me', label: '我的档案', ico: '🪪' },
+        { hash: '#/attendance', label: '出勤打卡', ico: '🕒' },
+        { hash: '#/payroll', label: '我的工资', ico: '💰' },
+      ]
     : [
         { hash: '#/dashboard', label: '工地作战台', ico: '📊' },
+        { hash: '#/attendance', label: '出勤打卡', ico: '🕒' },
+        { hash: '#/payroll', label: '工资分账', ico: '💰' },
         { hash: '#/workers', label: '人员档案', ico: '👷' },
       ];
 
@@ -125,6 +133,20 @@ async function route() {
     app.innerHTML = '';
     app.append(shell(content, '#/workers'));
     renderWorkers(content, params);
+    return;
+  }
+  if (path === '/attendance') {
+    content = el('div', {});
+    app.innerHTML = '';
+    app.append(shell(content, '#/attendance'));
+    renderAttendance(content, params);
+    return;
+  }
+  if (path === '/payroll') {
+    content = el('div', {});
+    app.innerHTML = '';
+    app.append(shell(content, '#/payroll'));
+    renderPayroll(content, params);
     return;
   }
   const m = path.match(/^\/workers\/(\w+)$/);

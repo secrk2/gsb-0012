@@ -160,5 +160,212 @@ print('ok')" >/dev/null 2>&1
 check "离线旧操作→conflict 并返回当前状态" $?
 
 echo ""
+echo "== 7. 出勤打卡：幂等/合并/判定/隔离 =="
+# 幂等
+OP="att-$(date +%s)-1"
+for i in 1 2; do
+  OUT=$(curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+    -d '{"worker_id":3,"direction":"in","source":"gate","device_id":"SMK-A","punch_time":"2026-09-16T23:50:00Z","client_op_id":"'$OP'"}')
+done
+echo "$OUT" | grep -q '"duplicate":true'
+check "同 client_op_id 打卡重放→幂等去重" $?
+
+# 同设备3分钟去重
+curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":3,"direction":"out","source":"gate","device_id":"SMK-A","punch_time":"2026-09-17T01:00:00Z"}' >/dev/null
+OUT=$(curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":3,"direction":"out","source":"gate","device_id":"SMK-A","punch_time":"2026-09-17T01:02:00Z"}')
+echo "$OUT" | grep -q 'same_device_3min'
+check "同设备3分钟内重复刷卡→合并一笔" $?
+
+# 双闸机+手机同日多源 → 甘特只合并为一条
+curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":4,"direction":"in","source":"gate","device_id":"GATE-A","punch_time":"2026-09-16T23:55:00Z"}' >/dev/null
+curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":4,"direction":"in","source":"gate","device_id":"GATE-B","punch_time":"2026-09-16T23:56:30Z"}' >/dev/null
+curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":4,"direction":"out","source":"mobile","device_id":"MOBILE","punch_time":"2026-09-17T09:30:00Z"}' >/dev/null
+OUT=$(curl -s "$BASE/api/attendance/gantt?view=week&date=2026-09-17" -H "Authorization: Bearer $GC")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+p=[x for x in d['people'] if x['worker_id']==4][0]
+c=p['cells']['2026-09-17']
+assert c['merged'] is True and c['punch_count']==3 and len(c['sources'])==2, c
+print('ok')" >/dev/null 2>&1
+check "双闸机+手机同日→合并1条(流水3笔/结论1条)" $?
+
+# 迟到判定（GT-1003 王军=id3 为迟到型，9月历史上必有迟到日）
+# 缺勤判定：GT-1005=id5 在第4段已实名制入场但从未打卡 → 本周应计缺勤
+OUT=$(curl -s "$BASE/api/attendance/gantt?view=month&month=2026-09" -H "Authorization: Bearer $GC")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+by={x['worker_id']:x for x in d['people']}
+c3=[c for c in by[3]['cells'].values() if c['status'] in ('late','late_early')]
+assert len(c3) >= 1, '王军9月应至少有1个迟到日'
+assert by[3]['late_days'] >= 1
+assert by[5]['has_any_punch'] is False and by[5]['absent_days'] >= 1, ('陈刚入场无卡应计缺勤', by[5]['absent_days'])
+print('ok')" >/dev/null 2>&1
+check "缺勤(入场无卡)与迟到(08:01型)判定正确" $?
+
+# 三种空态：无打卡人(GT-1007=id7 待入场)、当周全废(GT-2006=id16 属工地二，监管员可见)
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+by={x['worker_id']:x for x in d['people']}
+assert by[7]['has_any_punch'] is False, by[7]
+print('ok')" >/dev/null 2>&1
+check "空态：该人无任何打卡（GT-1007）" $?
+OUT=$(curl -s "$BASE/api/attendance/gantt?view=week&date=2026-09-14&site_id=2" -H "Authorization: Bearer $RG")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+by={x['worker_id']:x for x in d['people']}
+assert by[16]['all_void'] is True, by[16]
+print('ok')" >/dev/null 2>&1
+check "空态：该时段打卡全作废（GT-2006 09-14/15）" $?
+
+# 数据隔离
+OUT=$(curl -s "$BASE/api/attendance/gantt?view=month&month=2026-09" -H "Authorization: Bearer $SL")
+echo "$OUT" | grep -q '宏宇劳务·钢筋一班'
+check "班组长可见本班组出勤" $?
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+assert all(x['team']=='宏宇劳务·钢筋一班' for x in d['people']), d['teams']
+print('ok')" >/dev/null 2>&1
+check "班组长看不到其他班组" $?
+
+# 工人代他人打卡 → 403
+OUT=$(curl -s -X POST "$BASE/api/attendance/punches" -H "Authorization: Bearer $WK" -H 'Content-Type: application/json' \
+  -d '{"worker_id":2,"direction":"in","source":"mobile"}')
+echo "$OUT" | grep -q '只能为本人打卡'
+check "工人代他人打卡→403" $?
+
+# 工人甘特只见自己
+OUT=$(curl -s "$BASE/api/attendance/gantt?view=week" -H "Authorization: Bearer $WK")
+echo "$OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);assert len(d['people'])==1 and d['people'][0]['worker_id']==1" 2>/dev/null
+check "工人只看得到本人出勤" $?
+
+# 口径双下发且公式不同
+echo "$OUT" | grep -q '实际出勤天数'
+check "甘特下发天口径公式" $?
+echo "$OUT" | grep -q '有效打卡工时'
+check "甘特下发工时口径公式" $?
+
+echo ""
+echo "== 8. 分账：版本单价/冻结/部分发/复核 =="
+# 6月 v1 300，8月 v2 330，9月 v3 360（张伟 id=1）
+OUT=$(curl -s "$BASE/api/payroll?month=2026-06" -H "Authorization: Bearer $GC")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+assert d['status']=='settled'
+zw=[i for i in d['items'] if i['worker_id']==1][0]
+assert zw['rate_version']==1 and zw['day_rate']==300, zw
+assert abs(zw['amount']-zw['work_days']*300)<0.01
+assert zw['paid_amount']>=zw['final_amount']  # 6月发清
+print('ok')" >/dev/null 2>&1
+check "6月冻结在 v1 ¥300 且已发清" $?
+
+OUT=$(curl -s -X POST "$BASE/api/payroll/settle" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' -d '{"month":"2026-06"}')
+echo "$OUT" | grep -q '已结算冻结'
+check "重复结算已冻结月→拒绝" $?
+
+OUT=$(curl -s "$BASE/api/payroll?month=2026-08" -H "Authorization: Bearer $GC")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+zw=[i for i in d['items'] if i['worker_id']==1][0]
+assert zw['rate_version']==2 and zw['day_rate']==330, zw
+assert zw['amount']==8580, zw['amount']
+assert zw['paid_amount']==3000 and zw['pending_amount']==5580, zw
+assert zw['dirty'] is True and zw['current_amount']==8250 and zw['current_diff']==-330, zw
+print('ok')" >/dev/null 2>&1
+check "8月冻结v2/部分发3000不被重算冲掉/差异-330待复核" $?
+
+# 9月实时用 v3 360
+OUT=$(curl -s "$BASE/api/payroll?month=2026-09" -H "Authorization: Bearer $GC")
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+zw=[i for i in d['items'] if i['worker_id']==1][0]
+assert zw['rate_version']==3 and zw['day_rate']==360, zw
+print('ok')" >/dev/null 2>&1
+check "新单价v3只影响9月起(张伟¥360)" $?
+
+# 已结算月改动打卡：未确认 409 need_confirm；确认后冻结金额与已发不变
+FIRSTPID=$(curl -s "$BASE/api/workers/1/punches?date=2026-08-20" -H "Authorization: Bearer $GC" | python3 -c "import sys,json;print(json.load(sys.stdin)['punches'][0]['id'])")
+OUT=$(curl -s -X POST "$BASE/api/punches/$FIRSTPID/void" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' -d '{"reason":"冒烟测试核对"}')
+echo "$OUT" | python3 -c "import sys,json;d=json.load(sys.stdin);assert d['need_confirm'] is True" 2>/dev/null
+check "改已结算月打卡→先要求二次确认" $?
+# 把 08-20 当天 4 笔（闸机+手机）全部作废 → 当天少1工日，实时金额 7920
+for PID in $(curl -s "$BASE/api/workers/1/punches?date=2026-08-20" -H "Authorization: Bearer $GC" | python3 -c "
+import sys,json
+for p in json.load(sys.stdin)['punches']:
+    if p['status']=='valid': print(p['id'])"); do
+  curl -s -X POST "$BASE/api/punches/$PID/void" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+    -d '{"reason":"冒烟测试核对","confirm_settled":true}' >/dev/null
+done
+# 冻结金额仍是8580、已发仍是3000（不被冲掉）
+curl -s "$BASE/api/payroll?month=2026-08" -H "Authorization: Bearer $GC" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+zw=[i for i in d['items'] if i['worker_id']==1][0]
+assert zw['amount']==8580 and zw['paid_amount']==3000 and zw['current_amount']==7920, zw
+print('ok')" >/dev/null 2>&1
+check "二次确认后：冻结8580/已发3000不变，实时降至7920" $?
+
+# 复核补差（apply）：应发变实时金额，已发3000不动
+OUT=$(curl -s -X POST "$BASE/api/payroll/review" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"month":"2026-08","worker_id":1,"action":"apply","reason":"冒烟确认08-20与08-25代打卡，按实际工日补差"}')
+echo "$OUT" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+assert d['paid_amount']==3000, d
+assert d['final_amount']==7920, d
+assert d['pending_amount']==4920, d
+print('ok')" >/dev/null 2>&1
+check "复核补差后应发=7920 已发3000不冲销 待发4920" $?
+# 差异标记清除
+curl -s "$BASE/api/payroll?month=2026-08" -H "Authorization: Bearer $GC" | python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+zw=[i for i in d['items'] if i['worker_id']==1][0]
+assert zw['dirty'] is False and zw['final_amount']==7920 and zw['pending_amount']==4920, zw
+print('ok')" >/dev/null 2>&1
+check "复核后差异标记清除且待发正确" $?
+
+# 无原因复核被拒
+OUT=$(curl -s -X POST "$BASE/api/payroll/review" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"month":"2026-08","worker_id":1,"action":"keep","reason":""}')
+echo "$OUT" | grep -q '必须填写原因'
+check "复核无原因→拒绝并要求留痕" $?
+
+# 新合同不能追溯已结算月
+OUT=$(curl -s -X POST "$BASE/api/contracts" -H "Authorization: Bearer $GC" -H 'Content-Type: application/json' \
+  -d '{"worker_id":1,"day_rate":400,"effective_from":"2026-07"}')
+echo "$OUT" | grep -q '不能追溯'
+check "新单价追溯已结算月→拦截" $?
+
+# 班组长/监理/工人不能结算、发薪、调价
+for role_tok in "$SL:班组长" "$SP:监理" "$WK:工人"; do
+  TOK=${role_tok%%:*}; NM=${role_tok##*:}
+  OUT=$(curl -s -X POST "$BASE/api/payroll/settle" -H "Authorization: Bearer $TOK" -H 'Content-Type: application/json' -d '{"month":"2026-09","confirm":true}')
+  echo "$OUT" | grep -q '仅总包'
+  check "$NM 无权结算" $?
+done
+
+# 未结算月可正常预览、导出
+OUT=$(curl -s "$BASE/api/payroll?month=2026-09" -H "Authorization: Bearer $GC" -o /dev/null -w '%{http_code}')
+[ "$OUT" = "200" ]
+check "9月未结算实时预览 200" $?
+curl -s "$BASE/api/attendance/export?view=month&month=2026-09&caliber=hours" -H "Authorization: Bearer $GC" | grep -q '工时口径'
+check "出勤CSV表头写明工时口径" $?
+curl -s "$BASE/api/payroll/export?month=2026-08" -H "Authorization: Bearer $GC" | grep -q '已发金额'
+check "分账CSV含已发金额列" $?
+
+echo ""
 echo "通过 $PASS 项，失败 $FAIL 项"
 [ $FAIL -eq 0 ]

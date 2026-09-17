@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"strconv"
+	"time"
 )
 
 // handleListSites 当前用户可见的工地列表（监管员全部，其余本人工地）
@@ -163,6 +164,9 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		arows.Close()
 	}
 
+	// 本月出勤（双口径，与出勤甘特/导出同一计算逻辑；班组长只统计本班组）
+	att := s.siteAttendanceSummary(u, siteID, time.Now().In(cst).Format("2006-01"))
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"site":            site,
 		"funnel":          funnel,
@@ -171,6 +175,7 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"open_hazards":    len(hazards),
 		"alerts":          alerts,
 		"unread_alerts":   unread,
+		"attendance":      att,
 		"server_time":     nowUTC(),
 	})
 }
