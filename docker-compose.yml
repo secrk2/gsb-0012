@@ -1,0 +1,25 @@
+services:
+  backend:
+    build: ./backend
+    container_name: gongtong-backend
+    environment:
+      GT_ADDR: ":7105"
+      GT_DB_PATH: /data/gongtong.db
+      GT_SEED: "true"
+    volumes:
+      - gt-data:/data
+    ports:
+      - "7105:7105"
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: gongtong-frontend
+    depends_on:
+      - backend
+    ports:
+      - "8105:80"
+    restart: unless-stopped
+
+volumes:
+  gt-data:

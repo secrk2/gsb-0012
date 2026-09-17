@@ -1,0 +1,5 @@
+gongtong
+*.db
+*.db-wal
+*.db-shm
+smoke.sh
