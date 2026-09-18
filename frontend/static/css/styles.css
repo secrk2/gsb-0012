@@ -372,3 +372,156 @@ body.has-offline-banner .main { padding-top: calc(var(--topbar-h) + 56px); }
   .bottomnav a.active { color: var(--accent-2); }
   .bottomnav a .ico { font-size: 19px; }
 }
+
+/* ========== 出勤打卡 / 双口径 ========== */
+.at-caliber { margin-bottom: 14px; }
+.caliber-card { padding: 14px 16px; }
+.caliber-switch { display: flex; gap: 8px; margin-bottom: 8px; }
+.caliber-def { font-size: 13px; color: var(--text); font-weight: 600; }
+.caliber-warn { margin-top: 8px; font-size: 12px; color: #fcd34d; background: rgba(245,158,11,.1); border: 1px solid #78350f; border-radius: 8px; padding: 7px 10px; }
+.kv-row { display: flex; flex-wrap: wrap; gap: 14px; color: var(--text-dim); font-size: 12.5px; margin-top: 8px; }
+.at-summary .at-stat-row { margin-bottom: 12px; }
+.range-nav { display: inline-flex; align-items: center; gap: 8px; }
+.range-label { min-width: 150px; text-align: center; font-variant-numeric: tabular-nums; color: var(--text-dim); font-size: 13px; }
+
+/* 甘特 */
+.at-card { overflow: hidden; }
+.at-scroll { overflow-x: auto; padding-bottom: 4px; }
+.at-grid { min-width: max-content; }
+.at-row { display: grid; grid-template-columns: 230px 1fr; align-items: stretch; }
+.at-head-row { position: sticky; top: 0; z-index: 2; }
+.at-name-cell {
+  position: sticky; left: 0; z-index: 3; background: var(--card);
+  border-right: 1px solid var(--line); border-bottom: 1px solid var(--line);
+  padding: 8px 10px; min-width: 230px; display: flex; flex-direction: column; gap: 2px;
+}
+.at-head-row .at-name-cell { background: var(--card-2); font-weight: 600; z-index: 4; }
+.at-name-link { font-weight: 600; color: var(--text); }
+.at-team { font-size: 11px; color: var(--text-dim); }
+.at-rate { display: flex; gap: 5px; margin-top: 2px; }
+.tag.lv-ok { color: #86efac; border-color: #14532d; background: rgba(34,197,94,.12); }
+.at-cells { display: grid; grid-auto-flow: column; grid-auto-columns: 38px; grid-template-rows: repeat(2, auto); }
+.at-head-row .at-cells { grid-template-rows: none; }
+.at-col-head { text-align: center; font-size: 11px; color: var(--text-dim); padding: 4px 0; border-bottom: 1px solid var(--line); }
+.at-col-head .ch-d { font-weight: 700; font-size: 13px; color: var(--text); }
+.at-col-head.wkend { background: rgba(100,116,139,.08); }
+.at-col-head.today .ch-d { color: var(--accent-2); }
+.at-cell {
+  height: 38px; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; border: 1px solid rgba(13,20,34,.35); position: relative; user-select: none;
+}
+.at-cell .at-glyph { line-height: 1; }
+.at-cell.today { box-shadow: inset 0 0 0 2px var(--accent-2); }
+.at-cell.manual { outline: 2px dashed var(--accent-2); outline-offset: -2px; z-index: 1; }
+.at-cell.locked::after { content: "🔒"; position: absolute; top: 0; right: 1px; font-size: 8px; }
+.at-present { background: rgba(34,197,94,.22); color: #86efac; }
+.at-late { background: rgba(245,158,11,.22); color: #fcd34d; }
+.at-early { background: rgba(251,146,60,.22); color: #fdba74; }
+.at-absent { background: rgba(239,68,68,.16); color: #fca5a5; }
+.at-rest { background: rgba(100,116,139,.12); color: #94a3b8; }
+.at-void { background: repeating-linear-gradient(45deg, rgba(100,116,139,.18), rgba(100,116,139,.18) 5px, rgba(100,116,139,.06) 5px, rgba(100,116,139,.06) 10px); color: #cbd5e1; }
+.at-cell.mini { width: 20px; height: 20px; display: inline-flex; font-size: 11px; border-radius: 4px; }
+.at-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 4px 2px; font-size: 12px; color: var(--text-dim); align-items: center; }
+.at-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.at-legend-item.muted { opacity: .85; }
+.all-void-row .at-name-cell { opacity: .8; }
+
+/* 手机竖向时用 data 属性显示日期 */
+.at-cell::before { content: attr(data-date); position: absolute; top: 1px; left: 2px; font-size: 8px; font-weight: 500; opacity: 0; color: var(--text-dim); }
+
+/* 打卡流水 */
+.punch-list .punch-item.voided { opacity: .55; }
+.punch-item.voided .title { text-decoration: line-through; }
+.src-tag { font-size: 11px; }
+.src-gate { color: #93c5fd; border-color: #1e3a5f; background: rgba(59,130,246,.12); }
+.src-mobile { color: #c4b5fd; border-color: #3b2f63; background: rgba(139,92,246,.14); }
+.punch-ops { display: flex; gap: 6px; }
+.cell-detail .kv { margin-bottom: 10px; }
+.field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.field-row .field { flex: 1; min-width: 140px; }
+
+/* 作战台出勤卡 */
+.att-brief-body { display: grid; grid-template-columns: 1.1fr 2fr; gap: 16px; }
+.att-today-title { font-size: 13px; color: var(--text-dim); margin-bottom: 8px; }
+.att-counts { display: flex; flex-wrap: wrap; gap: 7px; }
+.att-cnt { font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line); }
+.att-cnt.present { color:#86efac; border-color:#14532d; background:rgba(34,197,94,.1); }
+.att-cnt.late { color:#fcd34d; border-color:#78350f; background:rgba(245,158,11,.1); }
+.att-cnt.early { color:#fdba74; border-color:#7c2d12; background:rgba(251,146,60,.1); }
+.att-cnt.absent { color:#fca5a5; border-color:#7f1d1d; background:rgba(239,68,68,.1); }
+.att-cnt.void { color:#cbd5e1; border-color:#334155; background:rgba(100,116,139,.12); }
+.att-cnt.no_record { color: var(--text-dim); }
+.att-rates { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.att-rate { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.att-rate .num { font-size: 24px; font-weight: 700; color: var(--ok); }
+.att-rate .num.alt { color: var(--accent-2); }
+.att-rate .rlabel { font-size: 12px; font-weight: 600; margin-top: 2px; }
+.att-rate .meta { font-size: 11.5px; color: var(--text-dim); margin-top: 2px; }
+
+/* ========== 工资分账 ========== */
+.freeze-banner, .preview-banner {
+  display: flex; align-items: flex-start; gap: 12px; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px;
+  border: 1px solid;
+}
+.freeze-banner { background: rgba(100,116,139,.12); border-color: #334155; }
+.preview-banner { background: rgba(59,130,246,.1); border-color: #1e3a5f; }
+.fb-ico { font-size: 20px; }
+.fb-title { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.fb-desc { font-size: 12.5px; color: var(--text-dim); margin-top: 2px; }
+.pay-table-wrap { overflow-x: auto; }
+.pay-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 880px; }
+.pay-table th, .pay-table td { padding: 9px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+.pay-table th { color: var(--text-dim); font-weight: 600; font-size: 12px; background: var(--card-2); position: sticky; top: 0; }
+.pay-table td.r, .pay-table th.r { text-align: right; font-variant-numeric: tabular-nums; }
+.pay-table td.strong { font-weight: 700; }
+.pay-table td.warn { color: #fcd34d; }
+.pay-table td.ok { color: #86efac; }
+.pay-table td.muted, .pay-table .meta, .muted { color: var(--text-dim); font-size: 12px; }
+.pay-table tr.preview-row { opacity: .92; }
+.pay-ops { display: flex; gap: 6px; }
+.strong { font-weight: 700; }
+.contract-team { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; }
+.ct-name { font-weight: 700; margin-bottom: 6px; }
+.ct-ver { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: 12.5px; padding: 3px 0; }
+.new-contract { margin-top: 14px; background: var(--bg-soft); }
+
+/* ========== 响应式：平板两栏（≤1280） ========== */
+@media (max-width: 1280px) {
+  .att-brief-body { grid-template-columns: 1fr; }
+  /* 甘特：每人一行两栏——左栏人员/口径，右栏该人日期格子自动换行（表头隐藏，日期标在格内） */
+  .at-grid { min-width: 0; }
+  .at-row { grid-template-columns: 200px 1fr; }
+  .at-row.at-head-row { display: none; }
+  .at-name-cell {
+    position: static; min-width: 0; align-content: center;
+    border-right: 1px solid var(--line); background: var(--card-2);
+  }
+  .at-cells {
+    grid-auto-flow: dense; grid-auto-columns: auto;
+    grid-template-columns: repeat(7, minmax(0, 1fr)); grid-auto-rows: 34px;
+  }
+  .at-cell { height: 34px; }
+  .at-cell::before { opacity: .75; }
+  .pay-table { min-width: 760px; }
+}
+
+/* ========== 响应式：手机竖向（≤768） ========== */
+@media (max-width: 768px) {
+  .at-summary .stat-row { grid-template-columns: repeat(2, 1fr); }
+  .att-rates { grid-template-columns: 1fr; }
+  /* 甘特：完全竖向——人员卡在上方，日期格子在下方每行 7 天 */
+  .at-row { grid-template-columns: 1fr; }
+  .at-name-cell { border-right: none; }
+  .at-cells { grid-template-columns: repeat(7, 1fr); grid-auto-rows: 38px; }
+  .at-cell { height: 38px; }
+  .at-cell::before { font-size: 9px; opacity: .85; }
+  .at-legend { gap: 8px; }
+  .range-label { min-width: 120px; }
+  .pay-table { min-width: 640px; }
+  .freeze-banner, .preview-banner { flex-direction: column; gap: 8px; }
+}
+
+/* 无打卡人员行（整段无打卡，区别于全页空态） */
+.no-punch-row { opacity: .62; }
+.no-punch-row .at-cell.at-absent { background: rgba(100,116,139,.08); color: #64748b; }
+.tag.no-punch-tag { color: var(--text-dim); border-style: dashed; }

@@ -5,6 +5,9 @@ import { renderLogin } from './views/login.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderWorkers } from './views/workers.js';
 import { renderWorkerDetail } from './views/workerDetail.js';
+import { renderAttendance } from './views/attendance.js';
+import { renderAttendanceDetail } from './views/attendanceDetail.js';
+import { renderPayroll } from './views/payroll.js';
 
 const app = document.getElementById('app');
 
@@ -57,9 +60,15 @@ function shell(content, activeNav) {
   const user = getUser();
   const isWorker = user.role === 'worker';
   const navItems = isWorker
-    ? [{ hash: '#/workers/me', label: '我的档案', ico: '🪪' }]
+    ? [
+        { hash: '#/workers/me', label: '我的档案', ico: '🪪' },
+        { hash: '#/attendance/me', label: '我的出勤', ico: '🕒' },
+        { hash: '#/payroll', label: '我的工资', ico: '💰' },
+      ]
     : [
         { hash: '#/dashboard', label: '工地作战台', ico: '📊' },
+        { hash: '#/attendance', label: '出勤打卡', ico: '🕒' },
+        { hash: '#/payroll', label: '工资分账', ico: '💰' },
         { hash: '#/workers', label: '人员档案', ico: '👷' },
       ];
 
@@ -127,7 +136,30 @@ async function route() {
     renderWorkers(content, params);
     return;
   }
-  const m = path.match(/^\/workers\/(\w+)$/);
+  if (path === '/attendance') {
+    if (user.role === 'worker') { location.hash = '#/attendance/me'; return; }
+    content = el('div', {});
+    app.innerHTML = '';
+    app.append(shell(content, '#/attendance'));
+    renderAttendance(content, params);
+    return;
+  }
+  if (path === '/payroll') {
+    content = el('div', {});
+    app.innerHTML = '';
+    app.append(shell(content, isWorkerNav(user) ? '#/payroll' : '#/payroll'));
+    renderPayroll(content, params);
+    return;
+  }
+  let m = path.match(/^\/attendance\/(me|\d+)$/);
+  if (m) {
+    content = el('div', {});
+    app.innerHTML = '';
+    app.append(shell(content, user.role === 'worker' ? '#/attendance/me' : '#/attendance'));
+    renderAttendanceDetail(content, m[1]);
+    return;
+  }
+  m = path.match(/^\/workers\/(\w+)$/);
   if (m) {
     activeNav = user.role === 'worker' ? '#/workers/me' : '#/workers';
     content = el('div', {});
@@ -139,6 +171,8 @@ async function route() {
   // 未知路径
   location.hash = '#/dashboard';
 }
+
+function isWorkerNav(user) { return user.role === 'worker'; }
 
 window.addEventListener('hashchange', route);
 refreshBanner();

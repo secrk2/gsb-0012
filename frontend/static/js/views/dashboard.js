@@ -1,6 +1,7 @@
 // ========== 工地作战台 ==========
 import { api, cachedGet, getUser } from '../api.js';
 import { el, toast, statusChip, fmtTime, fmtAgo, dataTimestamp, errorState, skeletonCard, ALERT_TYPE_LABELS } from '../ui.js';
+import { pct } from '../calibers.js';
 
 const FUNNEL_STAGES = [
   ['pending', '待入场'],
@@ -169,11 +170,50 @@ export async function renderDashboard(root, params) {
   root.append(
     head,
     stats,
+    buildAttendanceCard(d.attendance),
     el('div', { class: 'dash-grid' },
       el('div', { class: 'span-8' }, funnelCard),
       el('div', { class: 'span-4' }, trainingCard),
       el('div', { class: 'span-6' }, hazardCard),
       el('div', { class: 'span-6' }, alertCard),
     ),
+  );
+}
+
+// ---- 出勤打卡速览卡：今日判定 + 本周双口径（口径文案与出勤详情/导出逐字一致） ----
+function buildAttendanceCard(a) {
+  if (!a || a.hidden) return null;
+  if (a.error) {
+    return el('div', { class: 'card att-brief' },
+      el('h3', {}, '出勤打卡（本周）'),
+      el('div', { class: 'empty' }, '出勤数据暂不可用：' + a.error));
+  }
+  const c = a.today_counts || {};
+  const count = (k) => el('span', { class: 'att-cnt ' + k }, `${({present:'出勤',late:'迟到',early:'早退',absent:'缺勤',rest:'休息',void:'作废',no_record:'无记录'})[k]} ${c[k] || 0}`);
+  const halfTeams = a.half_day_teams || [];
+  return el('div', { class: 'card att-brief' },
+    el('h3', {}, '出勤打卡（本周 ' + a.week_from + ' ~ ' + a.week_to + '）',
+      el('span', { class: 'spacer' }),
+      el('a', { class: 'btn sm ghost', href: '#/attendance' }, '打开出勤甘特 ›')),
+    el('div', { class: 'att-brief-body' },
+      el('div', { class: 'att-today' },
+        el('div', { class: 'att-today-title' }, `今日判定（打卡 ${a.punched_today || 0} 人）`),
+        el('div', { class: 'att-counts' },
+          count('present'), count('late'), count('early'), count('absent'), count('void'), count('no_record')),
+      ),
+      el('div', { class: 'att-rates' },
+        el('div', { class: 'att-rate' },
+          el('div', { class: 'num' }, pct(a.rate_days)),
+          el('div', { class: 'rlabel' }, a.caliber_days_text),
+          el('div', { class: 'meta' }, `实际出勤 ${Number(a.present_days || 0).toFixed(1)} / 应出勤 ${Number(a.scheduled_days || 0).toFixed(1)} 天`)),
+        el('div', { class: 'att-rate' },
+          el('div', { class: 'num alt' }, pct(a.rate_hours)),
+          el('div', { class: 'rlabel' }, a.caliber_hours_text),
+          el('div', { class: 'meta' }, `有效打卡 ${(Number(a.worked_minutes || 0) / 60).toFixed(1)} / 排班 ${(Number(a.scheduled_minutes || 0) / 60).toFixed(1)} 小时`)),
+      ),
+    ),
+    halfTeams.length
+      ? el('div', { class: 'caliber-warn' }, '⚠️ 半天班班组（' + halfTeams.join('、') + '）两口径数值可能不同，均为正式口径。')
+      : null,
   );
 }

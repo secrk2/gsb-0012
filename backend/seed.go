@@ -280,6 +280,11 @@ func seed(db *sql.DB) error {
 		}
 	}
 
+	// ---------- 出勤打卡 + 合同版本 + 分账冻结演示 ----------
+	if err := seedAttendance(tx, siteIDs, workerIDs, userIDs["gc_admin"]); err != nil {
+		return err
+	}
+
 	log.Printf("seed: 完成（%d工地 / %d人员 / %d账号）", len(sites), len(workers), len(users))
 	return tx.Commit()
 }

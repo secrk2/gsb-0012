@@ -2,6 +2,7 @@ package main
 
 import (
 	"net/http"
+	"net/url"
 	"strconv"
 )
 
@@ -163,6 +164,9 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		arows.Close()
 	}
 
+	// 出勤打卡速览（本周双口径 + 今日判定计数；口径文案与出勤详情/导出一致）
+	attBrief := s.buildAttendanceBrief(u, r, siteID)
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"site":            site,
 		"funnel":          funnel,
@@ -171,8 +175,64 @@ func (s *server) handleDashboard(w http.ResponseWriter, r *http.Request) {
 		"open_hazards":    len(hazards),
 		"alerts":          alerts,
 		"unread_alerts":   unread,
+		"attendance":      attBrief,
 		"server_time":     nowUTC(),
 	})
+}
+
+// buildAttendanceBrief 作战台出勤卡：本周甘特双口径 + 今日出勤/缺勤/迟到/早退计数
+func (s *server) buildAttendanceBrief(u *User, r *http.Request, siteID int64) map[string]any {
+	sc := &attScope{siteID: siteID}
+	switch u.Role {
+	case RoleRegulator:
+		sc.readOnly = true
+	case RoleSubLeader:
+		sc.team = u.Team
+	case RoleWorker:
+		return map[string]any{"hidden": true}
+	}
+	from, to, _ := ganttRange(url.Values{})
+	out, aerr := s.buildGantt(sc, from, to)
+	if aerr != nil {
+		return map[string]any{"error": aerr.Msg}
+	}
+	today := todayLocal()
+	counts := map[string]int{"present": 0, "late": 0, "early": 0, "absent": 0, "rest": 0, "void": 0, "no_record": 0}
+	punched := 0
+	eligibleWorkers := 0
+	for _, wm := range out["workers"].([]map[string]any) {
+		// 与出勤率口径一致：仅在场或本周确有打卡者计入今日判定，请假/退场/黑名单/待入场不算缺勤
+		if wm["worker_status"] != string(StatusOnsite) && !wm["has_any_punch"].(bool) {
+			continue
+		}
+		eligibleWorkers++
+		c, ok := wm["days"].(map[string]*dayCell)[today]
+		if !ok {
+			counts["no_record"]++
+			continue
+		}
+		if c.Total > 0 {
+			punched++
+		}
+		if _, exists := counts[c.Status]; exists {
+			counts[c.Status]++
+		}
+	}
+	total := out["total"].(map[string]any)
+	return map[string]any{
+		"week_from": out["from"], "week_to": out["to"],
+		"today_counts": counts, "punched_today": punched,
+		"eligible_today":     eligibleWorkers,
+		"rate_days":          total["rate_days"],
+		"rate_hours":         total["rate_hours"],
+		"scheduled_days":     total["scheduled_days"],
+		"present_days":       total["present_days"],
+		"worked_minutes":     total["worked_minutes"],
+		"scheduled_minutes":  total["scheduled_minutes"],
+		"caliber_days_text":  caliberDaysText,
+		"caliber_hours_text": caliberHoursText,
+		"half_day_teams":     out["rule"].(map[string]any)["half_day_teams"],
+	}
 }
 
 // handleReadAlert 单条告警已读（消红点）

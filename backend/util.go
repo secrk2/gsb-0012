@@ -20,8 +20,14 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	}
 }
 
+// writeErr 业务错误简写
 func writeErr(w http.ResponseWriter, code int, msg string) {
 	writeJSON(w, code, map[string]any{"error": msg})
+}
+
+// decodeJSON 解析请求体
+func decodeJSON(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
 // apiError 业务错误，可携带当前状态与允许流转，供前端渲染错误态/冲突态

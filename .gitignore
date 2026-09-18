@@ -12,3 +12,9 @@ coverage/
 *.log
 *.tsbuildinfo
 .DS_Store
+
+# 本地 Go 运行产物
+/backend/gongtong
+*.db
+*.db-wal
+*.db-shm

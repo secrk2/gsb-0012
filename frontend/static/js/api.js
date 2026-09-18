@@ -131,33 +131,99 @@ export async function submitTransition(workerId, payload) {
   }
 }
 
-// 恢复在线后批量同步：服务端按 client_op_id 幂等去重，冲突返回当前状态
+// 出勤打卡（闸机/手机定位）：同样支持离线排队，按 client_op_id 幂等；
+// 已结算冻结月补打需 confirm + reason（由调用方在 409 need_confirm 时补齐）。
+export async function submitPunch(payload) {
+  const op = {
+    type: 'punch',
+    worker_id: payload.worker_id,
+    punch_date: payload.punch_date,
+    punch_time: payload.punch_time,
+    source: payload.source || 'mobile',
+    device: payload.device || '',
+    reason: payload.reason || '',
+    confirm: !!payload.confirm,
+    client_op_id: payload.client_op_id || newOpId(),
+    client_time: new Date().toISOString(),
+  };
+  const post = async () => api.post('/api/attendance/punch', op);
+  if (!online) {
+    const ops = getOutbox(); ops.push(op); saveOutbox(ops);
+    return { queued: true, client_op_id: op.client_op_id };
+  }
+  try {
+    return await post();
+  } catch (e) {
+    if (e.offline) {
+      const ops = getOutbox(); ops.push(op); saveOutbox(ops);
+      return { queued: true, client_op_id: op.client_op_id };
+    }
+    throw e;
+  }
+}
+
+// 带鉴权头的文件下载（CSV 导出需要 Bearer，不能直接用 <a>）
+export async function downloadWithAuth(path, fallbackName) {
+  const res = await fetch(path, { headers: { Authorization: 'Bearer ' + getToken() } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `导出失败（${res.status}）`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = res.headers.get('Content-Disposition')?.split('filename="')[1]?.replace('"', '') || fallbackName;
+  document.body.append(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// 恢复在线后批量同步：状态变更走批量幂等；打卡逐条重放（同 client_op_id 去重）
 export async function flushOutbox() {
   const ops = getOutbox();
   if (!ops.length || !online) return { flushed: 0, conflicts: [] };
   const transitions = ops.filter(o => o.type === 'transition');
-  if (!transitions.length) return { flushed: 0, conflicts: [] };
-  try {
-    const res = await api.post('/api/sync/batch', {
-      ops: transitions.map(t => ({
-        client_op_id: t.client_op_id,
-        worker_id: t.worker_id,
-        to: t.to,
-        reason: t.reason,
-        client_time: t.client_time,
-        face_verified: t.face_verified,
-        id_verified: t.id_verified,
-      })),
-    });
-    const results = res.results || [];
-    const doneIds = new Set(results.map(r => r.client_op_id));
-    saveOutbox(ops.filter(o => !doneIds.has(o.client_op_id)));
-    return {
-      flushed: results.filter(r => r.status === 'applied').length,
-      duplicates: results.filter(r => r.status === 'duplicate').length,
-      conflicts: results.filter(r => r.status === 'conflict' || r.status === 'error'),
-    };
-  } catch (e) {
-    return { flushed: 0, conflicts: [], error: e };
+  const punches = ops.filter(o => o.type === 'punch');
+  let flushed = 0, duplicates = 0;
+  const conflicts = [];
+  const done = new Set();
+
+  // 打卡逐条（冻结月离线补打的 confirm/reason 已在入队时带上）
+  for (const p of punches) {
+    try {
+      const r = await api.post('/api/attendance/punch', p);
+      done.add(p.client_op_id);
+      if (r.duplicate) duplicates++; else flushed++;
+    } catch (e) {
+      if (e.status === 409 && e.data && e.data.need_confirm) conflicts.push({ op: p, error: e.data.error });
+      // 其余错误（403/400）保留在队列无意义，直接丢弃并暴露
+      if (e.status === 400 || e.status === 403) { done.add(p.client_op_id); conflicts.push({ op: p, error: e.message }); }
+    }
   }
+
+  if (transitions.length) {
+    try {
+      const res = await api.post('/api/sync/batch', {
+        ops: transitions.map(t => ({
+          client_op_id: t.client_op_id,
+          worker_id: t.worker_id,
+          to: t.to,
+          reason: t.reason,
+          client_time: t.client_time,
+          face_verified: t.face_verified,
+          id_verified: t.id_verified,
+        })),
+      });
+      const results = res.results || [];
+      results.forEach(r => done.add(r.client_op_id));
+      flushed += results.filter(r => r.status === 'applied').length;
+      duplicates += results.filter(r => r.status === 'duplicate').length;
+      results.filter(r => r.status === 'conflict' || r.status === 'error').forEach(r => conflicts.push(r));
+    } catch (e) {
+      return { flushed, conflicts, error: e };
+    }
+  }
+
+  saveOutbox(ops.filter(o => !done.has(o.client_op_id)));
+  return { flushed, duplicates, conflicts };
 }

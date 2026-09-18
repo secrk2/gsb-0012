@@ -1,7 +1,7 @@
 #!/bin/bash
 # 工瞳 API 冒烟测试
 set -u
-BASE=http://localhost:7105
+BASE=${BASE:-http://localhost:7105}
 PASS=0; FAIL=0
 
 check() { # name, condition
